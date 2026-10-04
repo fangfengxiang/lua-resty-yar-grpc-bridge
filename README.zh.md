@@ -7,7 +7,7 @@
 [![OpenResty](https://img.shields.io/badge/OpenResty-%3E%3D%201.19.3.1-blue.svg)](https://openresty.org/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![OPM](https://img.shields.io/badge/OPM-lua--resty--yar--grpc--bridge-blue.svg)](https://opm.openresty.org/package/fangfengxiang/lua-resty-yar-grpc-bridge/)
-[![LuaRocks](https://img.shields.io/badge/dep-lua--yar--grpc-blue.svg)](https://luarocks.org/modules/fangfengxiang/lua-yar-grpc)
+[![LuaRocks](https://img.shields.io/luarocks/v/fangfengxiang/lua-resty-yar-grpc-bridge)](https://luarocks.org/modules/fangfengxiang/lua-resty-yar-grpc-bridge)
 
 基于 [OpenResty](https://openresty.org) 的 **gRPC ↔ YAR 双向协议桥接库**。
 
@@ -43,15 +43,21 @@ gRPC 客户端 / YAR 客户端均无需感知对端协议。
 
 ## 安装
 
-```bash
-# 1. 安装 lua-yar-grpc（自动连带安装 lua-yar、lua-protobuf）
-luarocks install lua-yar-grpc
+### OPM（OpenResty 原生，生产推荐）
 
-# 2. 安装本库
+```bash
 opm get fangfengxiang/lua-resty-yar-grpc-bridge
+# OPM 不管理 Lua 依赖，需额外安装核心依赖
+luarocks install lua-yar-grpc
 ```
 
-> `lua-yar-grpc` 的 rockspec 已声明 `dependencies = { lua-yar, lua-protobuf }`，luarocks 一条命令即装齐三个 Lua 依赖。opm 只管 OpenResty 包，无法把 luarocks 依赖折叠进 `opm get`（opm 跨生态依赖在 [官方 TODO 列表](https://github.com/openresty/opm) 中，尚未实现）。
+### LuaRocks
+
+```bash
+luarocks install lua-resty-yar-grpc-bridge
+```
+
+> 本库 rockspec 已声明 `dependencies = { lua-yar-grpc, lua-yar, lua-protobuf }`，luarocks 一条命令即装齐桥接库与全部 Lua 依赖。
 
 ## 快速开始
 

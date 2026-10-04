@@ -18,7 +18,6 @@
 local ngx = ngx
 
 ---@class yar_grpc_bridge.host
----@field VERSION string
 ---@field now fun():number
 ---@field time fun():integer
 ---@field localtime fun():string
@@ -31,7 +30,6 @@ local ngx = ngx
 ---@field LOG_ERR integer
 ---@field shared_dict fun(name:string):table|nil
 local _M = {}
-_M.VERSION = "0.1.0"
 
 -- 时间 / Time
 _M.now = function()
