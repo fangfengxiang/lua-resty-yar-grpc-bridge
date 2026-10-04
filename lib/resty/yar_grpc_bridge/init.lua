@@ -1,5 +1,5 @@
 -- lib/resty/yar_grpc_bridge/init.lua
--- lua-resty-yar-grpc-bridge: gRPC → YAR 协议代理 OPM 包入口
+-- lua-resty-yar-grpc-bridge: gRPC → YAR 协议代理 OPM 包入口（门面）
 --
 -- 在 init_by_lua_block 阶段调用 setup(opts) 一次，完成：
 --   1. 加载预编译 .pb 二进制描述符（pb.load）
@@ -7,21 +7,19 @@
 --   3. 注入 cosocket（Yar.client.set_socket(ngx.socket)）
 --   4. 配置 YAR 默认选项
 --
--- 在 content_by_lua_block 阶段调用 serve()，处理单个 gRPC 请求：
---   读取请求体 → 解析 gRPC 帧 → 解析 path → 查 services → bridge.handle → 输出响应
+-- HTTP 入口 serve() 已拆出到 grpc2yar_entry.lua（overview-5：包门面不混 HTTP I/O）。
+--   content_by_lua_block 调 require("resty.yar_grpc_bridge.grpc2yar_entry").serve()
+--   本模块保留 serve() 委托别名（向后兼容现有 nginx 配置 / 测试）。
+--   配置状态（_services / _svc_cache / _max_payload_bytes）仍由门面持有，
+--   入口层通过 resolve_service_config() / get_max_payload_bytes() 运行时读取。
 
 local ngx = ngx
 local pb = require("pb")
 local Yar = require("yar")
 local bridge = require("resty.yar_grpc_bridge.grpc2yar")
-local trace = require("resty.yar_grpc_bridge.trace")
 local host = require("resty.yar_grpc_bridge.host")
--- 核心协议转换库 lua-yar-grpc（纯函数，运行时无关）
--- Core protocol conversion library lua-yar-grpc (pure functions, runtime-agnostic)
-local codec = require("yar_grpc.codec")
-local errors = require("yar_grpc.errors")
-local grpc_converter = require("yar_grpc.grpc_converter")
-local core_deadline = require("yar_grpc.deadline")
+-- 核心协议转换库 lua-yar-grpc（纯函数，运行时无关；门面 setup 仅用 core.clear_cache）
+-- 协议编解码 / 错误码 / deadline / trace 由 grpc2yar_entry 在入口层按需 require。
 local core = require("yar_grpc")
 
 ---@class yar_grpc_bridge
@@ -98,49 +96,8 @@ local function load_pb_file(file)
     return true
 end
 
--- HTTP 响应函数（Category 2：与 HTTP 框架绑定，从 errors.lua 移入入口层）
--- HTTP response functions (Category 2: HTTP framework bound, moved from errors.lua to entry layer)
-
---- 发送 gRPC 错误响应
--- trailers-only 响应（无 body）：grpc-status 放在 HEADERS frame 中
--- grpc-status/grpc-message 通过 nginx add_trailer + $grpc_status 变量发送
--- 统一写 host.ctx.grpc_status，调用方无需再手动赋值（收口）
----@param status integer gRPC 状态码
----@param message? string grpc-message
-local function send_error(status, message)
-    host.ctx.grpc_status = status
-    -- 错误响应无 body：grpc-status 直接写 leading response header（符合 gRPC 规范——
-    -- 错误响应的 grpc-status 在 HEADERS frame 带 END_STREAM）。
-    -- 同时设 ngx.var 供 nginx add_trailer 指令兼容（若部署用 HTTP/2 trailer 方式）。
-    -- 注：ngx.location.capture 子请求的 res.header 不含 add_header 指令的 header，
-    -- 必须用 ngx.header 直接设才能被 capture 读取（测试依赖此路径）。
-    ngx.header["grpc-status"] = tostring(status)
-    ngx.header["grpc-message"] = message or ""
-    ngx.var.grpc_status = tostring(status)
-    ngx.var.grpc_message = message or ""
-    ngx.header["content-type"] = "application/grpc"
-    ngx.status = ngx.HTTP_OK
-    return ngx.exit(ngx.HTTP_OK)
-end
-
---- 发送 gRPC 成功响应
--- gRPC 成功响应布局：Headers(content-type, grpc-status=0) → DATA(gRPC frame) → Trailers(grpc-status=0)
--- grpc-status 规范上在 trailers，但 ngx.location.capture 子请求的 res.header 不含 add_header/
--- add_trailer 指令的 header（OpenResty 限制）。为让 capture 测试能读取 grpc-status，
--- 此处同时用 ngx.header 设 leading header；生产 HTTP/2 的 trailer 由 nginx add_trailer 指令 +
--- ngx.var.grpc_status 输出（部署时配置）。统一写 host.ctx.grpc_status = 0（收口）。
----@param frame string 完整的 gRPC 帧（已由 codec.encode_frame 编码）
-local function send_ok(frame)
-    host.ctx.grpc_status = errors.OK
-    ngx.header["grpc-status"] = "0"
-    ngx.header["grpc-message"] = ""
-    ngx.var.grpc_status = "0"
-    ngx.var.grpc_message = ""
-    ngx.header["content-type"] = "application/grpc"
-    ngx.status = ngx.HTTP_OK
-    ngx.print(frame)
-    return ngx.exit(ngx.HTTP_OK)
-end
+-- HTTP 响应函数 send_error / send_ok 已移至 grpc2yar_entry.lua（Category 2 HTTP I/O）。
+-- HTTP response functions moved to grpc2yar_entry.lua (Category 2 HTTP framework I/O).
 
 --- 初始化：加载 .pb 文件、配置 services、注入 cosocket
 -- 在 init_by_lua_block 中调用一次
@@ -268,6 +225,7 @@ function _M.setup(opts)
 end
 
 --- 解析服务配置为最终 YAR 调用参数（合并全局默认 + per-service 覆盖）
+-- 由 grpc2yar_entry.serve() 通过门面访问器调用（配置状态由本门面持有）
 ---@param service_name string 服务名（用作缓存 key）
 ---@return string|nil url YAR Server URL
 ---@return table|nil opts 合并后的 YAR 选项
@@ -293,127 +251,21 @@ local function resolve_service_config(service_name)
     _svc_cache[service_name] = { url = svc.url, options = opts }
     return svc.url, opts
 end
+-- 暴露给 grpc2yar_entry.serve()（配置状态由门面持有，入口层只读访问）
+_M.resolve_service_config = resolve_service_config
 
---- 处理单个 gRPC 请求（在 content_by_lua_block 中调用）
--- 读取请求体 → 解析 gRPC 帧 → 检测流式 → 解析 path → 查 services → bridge.handle → 输出响应
+--- 读取请求体大小上限（供 grpc2yar_entry.serve() DoS 预检使用）
+---@return number max_payload_bytes
+function _M.get_max_payload_bytes()
+    return _max_payload_bytes
+end
+
+--- 处理单个 gRPC 请求（委托别名，向后兼容）
+-- 实现已移至 grpc2yar_entry.lua（overview-5：HTTP I/O 不混包门面）。
+-- 惰性 require 避免与 grpc2yar_entry 的加载循环（grpc2yar_entry 运行时 require 本门面）。
 ---@return nil
-function _M.serve() --luacheck: no unused args
-    -- 0. 记录请求开始时间，解析 deadline
-    local request_start = host.now()
-    local deadline_ms = core_deadline.parse_timeout(host.var.http_grpc_timeout)
-    host.ctx.request_start = request_start
-    host.ctx.grpc_deadline_ms = deadline_ms
-
-    -- 0a. 生成/提取请求 ID（委托给 trace 模块，消除内联重复）
-    trace.ensure_request_id("x-request-id")
-
-    -- 0b. 前置 deadline 检查（核心 check_expired 接受注入的 now，运行时无关）
-    if core_deadline.check_expired(deadline_ms, request_start, host.now()) then
-        send_error(errors.DEADLINE_EXCEEDED, "deadline already exceeded")
-        return
-    end
-
-    -- 1. Content-Length 预检（P0-4，DoS 防护：超限不产生读 I/O）
-    local content_length = tonumber(host.var.http_content_length)
-    if content_length and content_length > _max_payload_bytes then
-        send_error(errors.RESOURCE_EXHAUSTED, "request body too large")
-        return
-    end
-
-    -- 2. 读取请求体
-    ngx.req.read_body()
-    local body = ngx.req.get_body_data()
-    if not body then
-        -- 请求体可能被写入临时文件（body spill）
-        local file = ngx.req.get_body_file()
-        if file then
-            host.log(host.LOG_WARN, "request body spilled to disk: " .. file)
-            -- 先查文件大小，超限不读入内存（P0-4 兜底防线）
-            local f = io.open(file, "rb")
-            if f then
-                f:seek("end")
-                local fsize = f:seek("cur")
-                f:seek("set")
-                if fsize > _max_payload_bytes then
-                    f:close()
-                    send_error(errors.RESOURCE_EXHAUSTED, "request body too large")
-                    return
-                end
-                body = f:read("*a")
-                f:close()
-            end
-        end
-    end
-
-    -- 2b. 内存 body 超限检查（file spill 路径已在上面检查 fsize；
-    --     Content-Length 预检对子请求/缺 header 的请求无效，此处为兜底防线）
-    if body and #body > _max_payload_bytes then
-        send_error(errors.RESOURCE_EXHAUSTED, "request body too large")
-        return
-    end
-
-    -- 3. 解析 gRPC 帧
-    local flag, payload, frame_size, err = codec.decode_frame(body)
-    if not flag then
-        send_error(errors.INVALID_ARGUMENT, err)
-        return
-    end
-
-    -- 4. 压缩标志检查
-    if flag ~= codec.COMPRESSION_NONE then
-        send_error(errors.UNIMPLEMENTED, "compression not supported")
-        return
-    end
-
-    -- 5. 流式模式检测（多帧 = streaming）
-    if codec.has_multiple_frames(body, frame_size) then
-        send_error(errors.UNIMPLEMENTED, "streaming mode not supported")
-        return
-    end
-
-    -- 6. 解析 gRPC path
-    local path = host.var.uri
-    local service, method, perr = grpc_converter.parse_grpc_path(path)
-    if not service then
-        send_error(errors.INVALID_ARGUMENT, perr)
-        return
-    end
-
-    -- 写入请求元数据到 host.ctx（供 log_by_lua 阶段读取）
-    host.ctx.grpc_service = service
-    host.ctx.grpc_method = method
-
-    -- 7. 查 services
-    local url, svc_opts = resolve_service_config(service)
-    if not url then
-        send_error(errors.NOT_FOUND, "service not found: " .. service)
-        return
-    end
-
-    -- 8. 调用 bridge.handle（完整管线，pcall 防止未预期异常逃逸）
-    local ok, response_payload, status, errmsg = pcall(bridge.handle, service, method, payload, {
-        url = url,
-        options = svc_opts,
-    })
-    if not ok then
-        send_error(errors.INTERNAL, "uncaught error: " .. tostring(response_payload))
-        return
-    end
-
-    if not response_payload then
-        send_error(status or errors.INTERNAL, errmsg)
-        return
-    end
-
-    -- 8a. 后置 deadline 检查（核心 check_expired，now 注入）
-    if core_deadline.check_expired(deadline_ms, request_start, host.now()) then
-        send_error(errors.DEADLINE_EXCEEDED, "deadline exceeded after call")
-        return
-    end
-
-    -- 9. 输出成功响应
-    local frame = codec.encode_frame(response_payload)
-    send_ok(frame)
+function _M.serve()
+    return require("resty.yar_grpc_bridge.grpc2yar_entry").serve()
 end
 
 --- 异步日志阶段（在 log_by_lua_block 中调用）
