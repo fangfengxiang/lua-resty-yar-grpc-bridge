@@ -3,6 +3,24 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号采用 [语义化版本](https://semver.org/lang/zh-CN/)（SemVer）。
 
+## [0.1.1] - 2026-10-04
+
+### 变更
+
+- **入口文件按职责拆分（overview-5）** — 将 `init.lua` 的 gRPC→YAR HTTP 入口（`serve()` / `send_error` / `send_ok`）拆出到 `grpc2yar_endpoint.lua`，将 `yar2grpc.lua` 的 YAR→gRPC HTTP 入口（`handle()`）拆出到 `yar2grpc_endpoint.lua`。`init.lua` 收敛为纯包门面（setup / log_phase / 配置状态），`yar2grpc.lua` 收敛为纯编排层（proxy service 注册 / `_dispatch` / transport 注入）。原 `serve()` / `handle()` 保留为惰性委托别名，向后兼容现有 nginx 配置与测试。详见 ADR [overview-5](docs/design/overview.md)。
+- **入口文件统一命名 `_entry` → `_endpoint`** — HTTP 入口文件命名统一为 `endpoint`（更贴 HTTP 入口语义），lib 内 require 路径与注释同步更新。
+
+### 新增
+
+- **e2e 覆盖 fullServiceName 无 package 模式** — 新增 `bare.proto`（无 package，全限定 service=Bare）双向互操作场景，验证 gRPC path `/Bare/Combine` 与 YAR `fullServiceName="Bare"` 的兼容，覆盖有/无 package 两种模式。
+- **`example/` 目录** — 提供可直接 `include` 的 nginx location 片段（`grpc2yar_location.conf` / `yar2grpc_location.conf`）。
+
+### 修复
+
+- **README location 正则简化** — 从 `^/api/(?<service_name>[^/]+)$` 改为 `^/(?<service_name>[^/]+)$`（`[^/]+` 兼容含 package 的 fullServiceName 如 `calc.Calculator`）。
+- **Dockerfile pin `lua-protobuf 0.5.3-1`** — 绕过 luarocks 3.13.0 `fetch.lua` 在 0.5.2-1 下载失败分支的拼接崩溃 bug（`attempt to concatenate nil`）。
+- **CI release.yml Release title 改用 tag 名** — GitHub Release title 从 `lua-resty-yar-grpc-bridge v<version>` 改为 `${{ github.ref_name }}`（即 tag 名，如 `v0.1.1`）。
+
 ## [0.1.0] - 2026-10-02
 
 ### 变更
@@ -46,4 +64,5 @@
 
 - **scenario1 并发段 `wait` 死锁** — 无参 `wait` 等待所有后台作业（含 grpc_server/nginx 长期运行服务进程，不会自行退出）导致死锁；改为 `wait $CONC_PIDS` 只等 php/curl 子进程。
 
+[0.1.1]: https://github.com/fangfengxiang/lua-resty-yar-grpc-bridge/releases/tag/v0.1.1
 [0.1.0]: https://github.com/fangfengxiang/lua-resty-yar-grpc-bridge/releases/tag/v0.1.0

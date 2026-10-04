@@ -58,7 +58,7 @@ sleep 1
 C "running Go gRPC client..."
 OUT="$LOG/s2_${PACKAGER}_result.log"
 if "$BIN/grpc_client" -addr 127.0.0.1:${E2E_PORT_GRPC2YAR} 2>&1 | tee "$OUT"; then
-    if grep -q "Add: PASS" "$OUT" && grep -q "Subtract: PASS" "$OUT"; then
+    if grep -q "Add: PASS" "$OUT" && grep -q "Subtract: PASS" "$OUT" && grep -q "Bare: PASS" "$OUT"; then
         P "Scenario 2 ($PACKAGER): PASS"
     else
         F "Scenario 2 ($PACKAGER): FAIL (assertion markers not found in output)"

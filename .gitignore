@@ -4,6 +4,9 @@
 .codebuddy
 *.pb
 
+# e2e protoc 生成的 Go 代码（gen.sh --go_out 产物，运行时生成，不入库）
+t/e2e/go/proto/
+
 # Test artifacts
 t/servroot*/
 t/log/

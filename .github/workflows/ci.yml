@@ -3,12 +3,21 @@ name: CI
 # push/PR 触发：lint（luacheck + stylua）+ Test::Nginx 集成测试 + e2e 端到端测试
 on:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
+      # feature-* 分支直推也跑 CI：开发时即时反馈（lint/opm-build/test/e2e），
+      # 不必先开 PR 才发现问题。GitHub Actions glob：* 匹配单层路径段，
+      # feature-v0.1.1 / feature-add-login 均命中（无斜线命名约定下足够）。
+      - feature-*
   pull_request:
-    branches: [main, master]
+    branches: [main, master]  # PR base=main/master 时跑：合并前门禁
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # 用 head_ref（PR 时）或 ref_name（push 时）：同分支的 push + PR 复用同一 group，
+  # PR 触发会取消该 feature 分支正在跑的 push 运行，避免 lint→e2e 整链重复跑两次。
+  # main/master push 的 group 仍是 ci-main/ci-master，不与 feature PR 冲突。
+  group: ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:

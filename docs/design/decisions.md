@@ -16,7 +16,7 @@
 
 | 模块 | 文件 | 决策数 |
 |------|------|--------|
-| 总体架构 | [overview.md](overview.md) | 4 |
+| 总体架构 | [overview.md](overview.md) | 6 |
 | 帧编解码 | [codec-layer.md](codec-layer.md) | 3 |
 | 协议桥接 | [bridge-layer.md](bridge-layer.md) | 7 |
 | 错误处理 | [error-layer.md](error-layer.md) | 5 |
@@ -24,7 +24,7 @@
 | 熔断器 | [circuit-breaker-layer.md](circuit-breaker-layer.md) | 3（已废弃） |
 | 可观测性 | [observability-layer.md](observability-layer.md) | 7 |
 
-**总计：31 个设计决策（其中 7 已废弃）**
+**总计：33 个设计决策（其中 7 已废弃）**
 
 ## 阅读指南
 

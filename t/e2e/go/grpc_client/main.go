@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	calcpb "calc/proto"
+	barepb "calc/proto/bare"
 )
 
 func main() {
@@ -71,6 +72,23 @@ func main() {
 			log.Fatalf("Expected 63, got %d", resp.GetResult())
 		}
 		fmt.Println("Subtract: PASS")
+	}
+
+	// 测试 Bare.Combine（无 package service，验证 fullServiceName="Bare" 兼容）
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		bareClient := barepb.NewBareClient(conn)
+		resp, err := bareClient.Combine(ctx, &barepb.Bare_CombineRequest{A: 18, B: 24})
+		if err != nil {
+			log.Fatalf("Bare.Combine(18, 24) failed: %v", err)
+		}
+		fmt.Printf("gRPC Bare.Combine(18, 24) = %d\n", resp.GetResult())
+		if resp.GetResult() != 42 {
+			log.Fatalf("Bare.Combine expected 42, got %d", resp.GetResult())
+		}
+		fmt.Println("Bare: PASS")
 	}
 
 	fmt.Println("Scenario 2 (Go gRPC → OpenResty → PHP Yar): PASS")

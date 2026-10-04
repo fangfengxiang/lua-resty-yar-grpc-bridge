@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	calcpb "calc/proto"
+	barepb "calc/proto/bare"
 )
 
 type calculatorServer struct {
@@ -41,6 +42,17 @@ func (s *calculatorServer) Subtract(ctx context.Context, req *calcpb.Calculator_
 	return &calcpb.Calculator_SubtractResponse{Result: result}, nil
 }
 
+// bareServer 实现 Bare service（无 package，全限定 = Bare）
+type bareServer struct {
+	barepb.UnimplementedBareServer
+}
+
+func (s *bareServer) Combine(ctx context.Context, req *barepb.Bare_CombineRequest) (*barepb.Bare_CombineResponse, error) {
+	result := req.GetA() + req.GetB()
+	log.Printf("gRPC Bare.Combine(%d, %d) = %d", req.GetA(), req.GetB(), result)
+	return &barepb.Bare_CombineResponse{Result: result}, nil
+}
+
 func main() {
 	addr     := flag.String("addr", "127.0.0.1:50051", "gRPC listen address")
 	httpAddr := flag.String("http-addr", "127.0.0.1:50052", "HTTP-to-gRPC bridge listen address")
@@ -48,7 +60,8 @@ func main() {
 
 	// Start HTTP-to-gRPC bridge in background (for OpenResty reverse bridge)
 	calcSrv := &calculatorServer{}
-	go startHTTPBridge(*httpAddr, calcSrv)
+	bareSrv := &bareServer{}
+	go startHTTPBridge(*httpAddr, calcSrv, bareSrv)
 
 	lis, err := net.Listen("tcp", *addr)
 	if err != nil {
@@ -57,6 +70,7 @@ func main() {
 
 	srv := grpc.NewServer()
 	calcpb.RegisterCalculatorServer(srv, calcSrv)
+	barepb.RegisterBareServer(srv, bareSrv)
 
 	// Enable gRPC reflection for debugging
 	reflection.Register(srv)

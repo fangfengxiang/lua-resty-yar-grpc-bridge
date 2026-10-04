@@ -1,11 +1,15 @@
 -- lib/resty/yar_grpc_bridge/yar2grpc.lua
--- YAR → gRPC 方向桥接入口层
--- Entry layer for the Yar → gRPC bridge.
+-- YAR → gRPC 方向编排层
+-- Orchestration layer for the Yar → gRPC bridge.
 -- 接受 YAR 协议请求，转换为 gRPC 调用，返回 YAR 协议响应。
 --
 -- 纯协议转换（pack_params/pb.encode/encode_frame/decode_frame/pb.decode/extract_result）
 -- 已委托核心 lua-yar-grpc 的 forward.encode_request / forward.decode_response。
--- 入口层只保留：grpc_transport 注入 + 调用编排 + Yar Server HTTP I/O 装配。
+-- 本层只保留：grpc_transport 注入 + 调用编排（_dispatch）+ proxy service 注册。
+--
+-- HTTP 入口 handle() 已拆出到 yar2grpc_endpoint.lua（overview-5：编排不混 HTTP I/O）。
+--   content_by_lua_block 调 require("resty.yar_grpc_bridge.yar2grpc_endpoint").handle()
+--   本模块保留 handle() 委托别名（向后兼容现有 nginx 配置 / 测试）。
 --
 -- 设计思路：
 --   利用 lua-yar Server 的 {method, data, writer} HTTP 模式解析 YAR 协议，
@@ -16,7 +20,6 @@
 --   set_grpc_transport(fn)  — 注入 gRPC 传输层可调用对象
 --   默认实现：ngx.location.capture + grpc_pass（nginx 内部代理到 gRPC upstream）
 
-local ngx = ngx
 local Yar = require("yar")
 local errors = require("yar_grpc.errors")
 local grpc_converter = require("yar_grpc.grpc_converter")
@@ -50,6 +53,21 @@ local _proxy_services = {}
 ---@param fn function grpc_transport(service, method, payload) -> payload|nil, status, err
 function _M.set_grpc_transport(fn)
     _grpc_transport = fn
+end
+
+--- 查询 gRPC 传输层是否已注入
+-- 供 yar2grpc_endpoint.handle() 前置校验（未注入则 fast-fail，不读 body）
+---@return boolean
+function _M.has_transport()
+    return _grpc_transport ~= nil
+end
+
+--- 取已注册的 proxy service 子表
+-- 供 yar2grpc_endpoint.handle() 按 service 名选 proxy（配置状态由本编排层持有）
+---@param service_name string
+---@return table|nil proxy {yar_method → 闭包}
+function _M.get_proxy(service_name)
+    return _proxy_services[service_name]
 end
 
 --- 配置反向桥接服务
@@ -127,76 +145,13 @@ function _M._dispatch(service, method, params)
     return result
 end
 
---- 处理 YAR 请求（在 content_by_lua_block 中调用）
--- 利用 Yar Server 的 HTTP 模式解析 YAR 协议 + 分发到 proxy service
----@return string|nil yar_response YAR 协议响应体
----@return string|nil err 错误信息
+--- 处理 YAR 请求（委托别名，向后兼容）
+-- 实现已移至 yar2grpc_endpoint.lua（overview-5：HTTP I/O 不混编排层）。
+-- 惰性 require 避免与 yar2grpc_endpoint 的加载循环（yar2grpc_endpoint 运行时 require 本编排层）。
+---@return string|nil yar_response
+---@return string|nil err
 function _M.handle()
-    if not _grpc_transport then
-        return nil, "grpc transport not injected, call set_grpc_transport() first"
-    end
-
-    -- service 名由 nginx location 的 named capture `service_name` 提取（声明式解析），
-    -- 部署方在 nginx 配置里决定 path 前缀规则；lua 端只消费 ngx.var.service_name。
-    -- 拿不到（location 未配 capture 或直接调用）直接报错，不做 yar→pb。
-    local service_name = ngx.var.service_name
-    if not service_name or service_name == "" then
-        ngx.status = ngx.HTTP_BAD_REQUEST
-        ngx.header["Content-Type"] = "text/plain"
-        ngx.say(
-            "yar2grpc: service_name nginx variable not set; configure location with named capture (?<service_name>...)"
-        )
-        return
-    end
-    local proxy = _proxy_services[service_name]
-    if not proxy then
-        ngx.status = ngx.HTTP_NOT_FOUND
-        ngx.header["Content-Type"] = "text/plain"
-        ngx.say("yar2grpc: service not registered: " .. service_name)
-        return
-    end
-
-    -- 确保 body 已读取（含 disk spill 处理，对标 init.lua serve() 的 body file 回退）
-    -- 当请求体超过 client_body_buffer_size 时 get_body_data() 返回 nil，数据写入临时文件
-    ngx.req.read_body()
-    local body = ngx.req.get_body_data()
-    if not body then
-        local file = ngx.req.get_body_file()
-        if file then
-            local f = io.open(file, "rb")
-            if f then
-                body = f:read("*a")
-                f:close()
-            end
-        end
-    end
-
-    -- 用该 service 的 proxy 子表创建 Yar Server（纯 method 查子表，多 service 互不冲突）
-    local server = Yar.server.new(proxy)
-
-    -- HTTP 模式：{method, data, writer}
-    -- server:handle 返回 true|nil, err，检查返回值不再吞掉错误
-    local ok, herr = server:handle({
-        method = ngx.req.get_method(),
-        data = body or "",
-        writer = function(status, headers, response_body)
-            ngx.status = status
-            for k, v in pairs(headers or {}) do
-                ngx.header[k] = v
-            end
-            ngx.print(response_body or "")
-        end,
-    })
-
-    if not ok then
-        -- server:handle 返回 nil, err：输出 HTTP 500 给客户端
-        ngx.status = ngx.HTTP_INTERNAL_SERVER_ERROR
-        ngx.header["content-type"] = "text/plain"
-        ngx.print("yar server error: " .. tostring(herr))
-        return nil, tostring(herr)
-    end
-
-    return true
+    return require("resty.yar_grpc_bridge.yar2grpc_endpoint").handle()
 end
 
 return _M
