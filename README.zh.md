@@ -14,7 +14,7 @@
 透明转换两个方向：
 
 - **gRPC → YAR**（`grpc2yar`）：接收 gRPC 客户端 Unary 一元请求，转换为 YAR 调用转发至 PHP YAR Server。
-- **YAR → gRPC**（`yar2grpc`）：接收 YAR 客户端请求，转换为 gRPC 调用转发至 gRPC 后端。
+- **YAR → gRPC**（`yar2grpc`）：接收 YAR 客户端请求，转换为 gRPC 调用转发至 gRPC 后端（仅 HTTP；不支持 TCP YAR 客户端直连）。
 
 gRPC 客户端 / YAR 客户端均无需感知对端协议。
 
@@ -260,14 +260,16 @@ YAR → gRPC 方向 (yar2grpc):
 
 ```
 lib/resty/yar_grpc_bridge/
-├── init.lua        -- 入口模块：setup() / serve() / log_phase()
-├── grpc2yar.lua    -- gRPC → YAR 方向桥接入口层
-├── yar2grpc.lua    -- YAR → gRPC 方向桥接入口层
-├── trace.lua       -- 请求 ID 管理 + 错误状态提取
-└── host.lua        -- 宿主适配层（ngx.* API 集中）
+├── init.lua                 -- 包门面：setup() / log_phase() / 配置状态
+├── grpc2yar.lua             -- gRPC → YAR 编排层（client 缓存 / hooks / 调用管线）
+├── grpc2yar_endpoint.lua    -- gRPC → YAR HTTP 入口：serve() / send_error / send_ok
+├── yar2grpc.lua             -- YAR → gRPC 编排层（proxy service / _dispatch / transport）
+├── yar2grpc_endpoint.lua    -- YAR → gRPC HTTP 入口：handle()
+├── trace.lua                -- 请求 ID 管理 + 错误状态提取
+└── host.lua                 -- 宿主适配层（ngx.* API 集中）
 ```
 
-> 核心协议转换（帧编解码 / protobuf 转换 / deadline / 错误码）由 [lua-yar-grpc](https://github.com/fangfengxiang/lua-yar-grpc) 提供，本库只做入口编排 + 宿主适配。
+> 核心协议转换（帧编解码 / protobuf 转换 / deadline / 错误码）由 [lua-yar-grpc](https://github.com/fangfengxiang/lua-yar-grpc) 提供，本库做三件事：包门面（配置/生命周期）、编排（client/transport）、OpenResty HTTP 入口（`*_endpoint.lua`，Category 2 I/O）。`init.lua` 的 `serve()` 与 `yar2grpc.lua` 的 `handle()` 保留为惰性委托别名，向后兼容。详见 [docs/design/overview.md](docs/design/overview.md) §overview-5。
 
 ## 可观测性
 
@@ -312,11 +314,13 @@ CI 矩阵（`.github/workflows/ci.yml`）：
 ```
 lua-resty-yar-grpc-bridge/
 ├── lib/resty/yar_grpc_bridge/   # 库本体
-│   ├── init.lua
-│   ├── grpc2yar.lua
-│   ├── yar2grpc.lua
-│   ├── trace.lua
-│   └── host.lua
+│   ├── init.lua                 # 包门面（setup / log_phase / 配置状态）
+│   ├── grpc2yar.lua             # gRPC → YAR 编排层
+│   ├── grpc2yar_endpoint.lua    # gRPC → YAR HTTP 入口（serve / send_error / send_ok）
+│   ├── yar2grpc.lua             # YAR → gRPC 编排层
+│   ├── yar2grpc_endpoint.lua    # YAR → gRPC HTTP 入口（handle）
+│   ├── trace.lua                # 请求 ID + 错误状态
+│   └── host.lua                 # 宿主适配（ngx.* API）
 ├── example/                     # 可直接 include 的 nginx location 片段
 │   ├── grpc2yar_location.conf
 │   └── yar2grpc_location.conf

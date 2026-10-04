@@ -92,7 +92,7 @@
 
 拆分后三职责清晰：包入口（配置/生命周期）、编排（client/transport 编排，宿主无关但运行时相关）、HTTP 入口（Category 2 I/O，宿主绑定）。
 
-当前 `init.lua` / `yar2grpc.lua` 仍为混合形态，重构待后续迭代；此决策先锁定拆分方向，避免后续改动继续往混合文件里堆。
+v0.1.1 已实施拆分：`init.lua` 收敛为包门面，HTTP 入口移至 `grpc2yar_endpoint.lua`（serve / send_error / send_ok）；`yar2grpc.lua` 收敛为编排层，HTTP 入口移至 `yar2grpc_endpoint.lua`（handle）。原 `serve()` / `handle()` 保留为惰性委托别名，向后兼容。
 
 ### 业界参考
 
@@ -151,3 +151,49 @@ grpc2yar.handle / yar2grpc._dispatch 瘦身（解耦 host.ctx 为 observer 注�
 
 1. *Clean Architecture*（Robert C. Martin）— 依赖规则与稳定依赖原则
 2. *A Philosophy of Software Design*（John Ousterhout）— 模块职责边界与 deep modules
+
+## overview-7: 不支持 yar2grpc 入站 TCP（HTTP-only 入站）
+
+- **状态**：已采纳
+- **决策驱动因素**：定位约束、场景占比、复杂度收益比、方向对称性
+- **关联决策**：overview-1（2 阶段架构）、overview-2（模块化分层）、overview-5（入口职责拆分）
+
+### 背景
+
+lua-yar Server 支持两种入站模式：`Server:handle({socket=...})`（TCP/Unix socket 模式，protocol 由 `self.protocol` 决定）与 `Server:handle({method, data, writer})`（HTTP callback 模式）；另有 `Server:listen("tcp://...") + Server:loop()` 原生 TCP 模式（见 `lua-yar/src/yar/server/init.lua:124-138`）。
+
+当前 `yar2grpc_endpoint.handle()` 采用 HTTP callback 模式（`yar2grpc_endpoint.lua:69-79`），入站绑定在 nginx HTTP location 上。是否需要补 TCP 入站以支持 YAR client 用 `tcp://bridge:port` 直连被反复讨论。
+
+注：grpc2yar 方向的**出站** TCP 已由 `grpc2yar.lua:99` `Yar.client.new(service_config.url)` 支持——`services.X.url` 写 `tcp://host:port` 即走 TCP（`lua-yar/src/yar/transport/transport.lua:36-41` 按 scheme 分发）。出站 TCP 不在 endpoint 层，无需也不受本决策影响。
+
+### 思考与取舍
+
+> "There are two ways of constructing a software design: one way is to make it so simple that there are obviously no deficiencies, and the other way is to make it so complicated that there are no obvious deficiencies." — C.A.R. Hoare
+> "构造软件设计有两种方式：一种是让它简单到显然没有缺陷，另一种是让它复杂到没有明显的缺陷。" — C.A.R. Hoare
+
+四层理由，定位为最硬约束。
+
+1. **定位层（最硬）** — 本库是 OpenResty HTTP 网关上的协议桥（`decisions.md` 设计哲学："嵌入用户 nginx/OpenResty"）。OpenResty 强项是 HTTP 反代与 `content_by_lua` 事件模型。YAR client TCP 直连等于把网关当 standalone TCP server 用，偏离"HTTP 网关上的协议桥"定位。若需 standalone TCP YAR server，lua-yar 自身 `Server:listen + loop` 已可胜任，无需经 bridge。
+
+2. **场景占比层** — PHP Yar client 主流用法是 `new Yar_Client("http://host/api")`（HTTP），yar-c client 同样走 HTTP。TCP 直连场景在 PHP 生态占比低，补齐收益有限。
+
+3. **复杂度收益比层** — gRPC 出站必然 HTTP/2（gRPC 规范规定 over HTTP/2，无 TCP 裸协议）。即便入站改 TCP，出站仍是 HTTP/2，整体复杂度上升但出站能力不变。`ngx.stream` subsystem 的 API 面（无 `ngx.req.*`）与 `http {}` 完全不同，现有 `yar2grpc_endpoint.handle()` 基于 `ngx.req.get_body_data` 的代码几乎需整层重写，收益不抵成本。
+
+4. **架构对称层** — grpc2yar 入站是 gRPC（必然 HTTP/2），yar2grpc 出站是 gRPC（必然 HTTP/2）。两个方向至少有一端钉死在 HTTP/2。入站 TCP 只在 yar2grpc 方向成立，方向不对称，徒增一个非对称入口。
+
+决策：**不实现 yar2grpc 入站 TCP**，入站保持 HTTP-only。出站 TCP（grpc2yar 方向）继续由 lua-yar client 的 url scheme 支持，不在本库 endpoint 层。
+
+### 业界参考
+
+- **PHP Yar Server**：`Yar_Server` 自身支持 standalone TCP（`Yar_Server::handle` + socket），不经网关——TCP 入站是 YAR server 的职责，非网关职责。
+- **Kong / APISIX**：主 HTTP 网关，stream proxy 是独立 subsystem 能力，非默认形态。
+- **gRPC 规范**（gRPC over HTTP/2）：gRPC 无 TCP 裸协议，方向一入站与方向二出站均钉死 HTTP/2。
+
+### 代码评价
+
+`yar2grpc_endpoint.lua:69-79` `server:handle({method, data, writer})` 使用 HTTP callback 模式，writer 写 `ngx.status/header/print`，绑定 nginx HTTP location。`grpc2yar.lua:99` `Yar.client.new(service_config.url)` 出站协议由 url scheme 决定（`lua-yar/src/yar/transport/transport.lua:36-41`），出站 TCP 无需 endpoint 改动。
+
+### 知识领域
+
+1. *A Philosophy of Software Design*（John Ousterhout）— 深模块与复杂度控制
+2. *The Mythical Man-Month*（Fred Brooks）— 保持概念完整性，拒绝非定位特性

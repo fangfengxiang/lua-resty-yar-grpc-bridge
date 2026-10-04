@@ -14,7 +14,7 @@ A bidirectional **gRPC ↔ YAR protocol bridge** for [OpenResty](https://openres
 It transparently converts between the two protocols in either direction:
 
 - **gRPC → YAR** (`grpc2yar`): receives gRPC client unary calls, converts them to YAR calls and forwards to a PHP YAR server.
-- **YAR → gRPC** (`yar2grpc`): receives YAR client calls, converts them to gRPC calls and forwards to a gRPC backend.
+- **YAR → gRPC** (`yar2grpc`): receives YAR client calls, converts them to gRPC calls and forwards to a gRPC backend (HTTP only; no raw-TCP YAR client).
 
 Neither the gRPC client nor the YAR client needs any awareness of the peer protocol.
 
@@ -260,14 +260,16 @@ YAR → gRPC direction (yar2grpc):
 
 ```
 lib/resty/yar_grpc_bridge/
-├── init.lua        -- entry module: setup() / serve() / log_phase()
-├── grpc2yar.lua    -- gRPC → YAR direction bridge entry
-├── yar2grpc.lua    -- YAR → gRPC direction bridge entry
-├── trace.lua       -- request-ID management + error-status extraction
-└── host.lua        -- host adapter layer (centralizes ngx.* API)
+├── init.lua                 -- package facade: setup() / log_phase() / config state
+├── grpc2yar.lua             -- gRPC → YAR orchestration (client cache / hooks / call pipeline)
+├── grpc2yar_endpoint.lua    -- gRPC → YAR HTTP entry: serve() / send_error / send_ok
+├── yar2grpc.lua             -- YAR → gRPC orchestration (proxy service / _dispatch / transport)
+├── yar2grpc_endpoint.lua    -- YAR → gRPC HTTP entry: handle()
+├── trace.lua                -- request-ID management + error-status extraction
+└── host.lua                 -- host adapter layer (centralizes ngx.* API)
 ```
 
-> Core protocol conversion (frame codec / protobuf conversion / deadline / error codes) is provided by [lua-yar-grpc](https://github.com/fangfengxiang/lua-yar-grpc). This library only does entry orchestration + host adaptation.
+> Core protocol conversion (frame codec / protobuf conversion / deadline / error codes) is provided by [lua-yar-grpc](https://github.com/fangfengxiang/lua-yar-grpc). This library does three things: package facade (config / lifecycle), orchestration (client / transport), and OpenResty HTTP entry (`*_endpoint.lua`, Category 2 I/O). `init.lua`'s `serve()` and `yar2grpc.lua`'s `handle()` are kept as lazy-delegation aliases for backward compatibility. See [docs/design/overview.md](docs/design/overview.md) §overview-5.
 
 ## Observability
 
@@ -312,11 +314,13 @@ CI matrix (`.github/workflows/ci.yml`):
 ```
 lua-resty-yar-grpc-bridge/
 ├── lib/resty/yar_grpc_bridge/   # the library
-│   ├── init.lua
-│   ├── grpc2yar.lua
-│   ├── yar2grpc.lua
-│   ├── trace.lua
-│   └── host.lua
+│   ├── init.lua                 # package facade (setup / log_phase / config state)
+│   ├── grpc2yar.lua             # gRPC → YAR orchestration layer
+│   ├── grpc2yar_endpoint.lua    # gRPC → YAR HTTP entry (serve / send_error / send_ok)
+│   ├── yar2grpc.lua             # YAR → gRPC orchestration layer
+│   ├── yar2grpc_endpoint.lua    # YAR → gRPC HTTP entry (handle)
+│   ├── trace.lua                # request-ID + error-status
+│   └── host.lua                 # host adapter (ngx.* API)
 ├── example/                     # ready-to-include nginx location snippets
 │   ├── grpc2yar_location.conf
 │   └── yar2grpc_location.conf
