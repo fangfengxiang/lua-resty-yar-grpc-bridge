@@ -7,7 +7,7 @@
 [![OpenResty](https://img.shields.io/badge/OpenResty-%3E%3D%201.19.3.1-blue.svg)](https://openresty.org/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![OPM](https://img.shields.io/badge/OPM-lua--resty--yar--grpc--bridge-blue.svg)](https://opm.openresty.org/package/fangfengxiang/lua-resty-yar-grpc-bridge/)
-[![LuaRocks](https://img.shields.io/badge/dep-lua--yar--grpc-blue.svg)](https://luarocks.org/modules/fangfengxiang/lua-yar-grpc)
+[![LuaRocks](https://img.shields.io/luarocks/v/fangfengxiang/lua-resty-yar-grpc-bridge)](https://luarocks.org/modules/fangfengxiang/lua-resty-yar-grpc-bridge)
 
 A bidirectional **gRPC ↔ YAR protocol bridge** for [OpenResty](https://openresty.org).
 
@@ -43,15 +43,21 @@ See also: [Yar](https://github.com/laruence/yar) (the most popular RPC framework
 
 ## Installation
 
-```bash
-# 1. Install lua-yar-grpc (auto-installs lua-yar + lua-protobuf as declared dependencies)
-luarocks install lua-yar-grpc
+### OPM (OpenResty, Production Recommended)
 
-# 2. Install this library
+```bash
 opm get fangfengxiang/lua-resty-yar-grpc-bridge
+# OPM does not manage Lua deps — install the core dep separately
+luarocks install lua-yar-grpc
 ```
 
-> `lua-yar-grpc`'s rockspec declares `dependencies = { lua-yar, lua-protobuf }`, so luarocks installs all three Lua deps in one shot. opm only manages OpenResty packages, so the luarocks step cannot be folded into `opm get` (opm cross-ecosystem deps are [on the opm TODO list](https://github.com/openresty/opm)).
+### LuaRocks
+
+```bash
+luarocks install lua-resty-yar-grpc-bridge
+```
+
+> The rockspec declares `dependencies = { lua-yar-grpc, lua-yar, lua-protobuf }`, so luarocks installs the bridge and all its Lua deps in one shot.
 
 ## Quick Start
 

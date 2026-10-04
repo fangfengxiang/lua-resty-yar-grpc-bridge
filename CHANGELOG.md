@@ -3,6 +3,18 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范，
 版本号采用 [语义化版本](https://semver.org/lang/zh-CN/)（SemVer）。
 
+## [0.1.2] - 2026-10-04
+
+### 新增
+
+- **LuaRocks 并存发布模式** — 新增 `lua-resty-yar-grpc-bridge-scm-1.rockspec`（scm 版，CI 从它生成版本 rockspec），与现有 OPM（`dist.ini`）并存分发。`luarocks install lua-resty-yar-grpc-bridge` 一条命令自动拉取全部依赖（lua-yar-grpc → lua-yar + lua-protobuf），取代此前"luarocks 装 Lua 依赖 + opm get 装本体"两步流程。
+- **版本号单一真相源** — 新增 `.versions` 清单 + `scripts/version-manager.sh`（sync/check/list）+ `scripts/release.sh`，驱动 dist.ini / init.lua 两处版本号同步，消除版本漂移。
+- **CI release 自动化** — 新增 `.github/workflows/release.yml`：tag 触发 → version-manager sync 自动补齐 → 从 scm 生成版本 rockspec → 查询 luarocks.org 自动确定 revision → GitHub Release + LuaRocks 上传 + OPM 上传（deploy 环境审批）。
+
+### 修复
+
+- **host.lua 版本漂移根因消除** — 删除 host.lua 冗余 `_M.VERSION`（此前 0.1.0 与 init.lua 0.1.1 不一致），版本号单点定义于 init.lua，从源头杜绝再漂移。
+
 ## [0.1.1] - 2026-10-04
 
 ### 变更
@@ -64,5 +76,6 @@
 
 - **scenario1 并发段 `wait` 死锁** — 无参 `wait` 等待所有后台作业（含 grpc_server/nginx 长期运行服务进程，不会自行退出）导致死锁；改为 `wait $CONC_PIDS` 只等 php/curl 子进程。
 
+[0.1.2]: https://github.com/fangfengxiang/lua-resty-yar-grpc-bridge/releases/tag/v0.1.2
 [0.1.1]: https://github.com/fangfengxiang/lua-resty-yar-grpc-bridge/releases/tag/v0.1.1
 [0.1.0]: https://github.com/fangfengxiang/lua-resty-yar-grpc-bridge/releases/tag/v0.1.0
