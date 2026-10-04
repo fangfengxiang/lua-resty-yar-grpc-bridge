@@ -60,7 +60,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: lua-resty-yar-grpc-bridge v${{ steps.version.outputs.version }}
+          name: ${{ github.ref_name }}
           body: |
             gRPC to YAR protocol bridge for OpenResty, bridging gRPC clients to PHP YAR servers.
 

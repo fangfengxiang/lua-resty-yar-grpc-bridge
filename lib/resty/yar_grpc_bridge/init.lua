@@ -25,7 +25,7 @@ local core = require("yar_grpc")
 ---@class yar_grpc_bridge
 ---@field VERSION string
 local _M = {}
-_M.VERSION = "0.1.0"
+_M.VERSION = "0.1.1"
 
 --- gRPC path 匹配正则（与 lua-yar-grpc grpc_converter.parse_grpc_path 同步）
 -- single source of truth：供文档引用 + 测试断言同步。
