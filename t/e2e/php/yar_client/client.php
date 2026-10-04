@@ -16,10 +16,10 @@ $packager = getenv("YAR_PACKAGER") ?: "json";
 
 // e2e 端口由 run_e2e.sh 集中定义并 export（默认 1985），独立运行回退默认值
 $port = getenv("E2E_PORT_YAR2GRPC") ?: "1985";
+// ── 有 package：calculator.Calculator（fullServiceName = "calculator.Calculator"）──
 $client = new Yar_Client("http://127.0.0.1:{$port}/api/calculator.Calculator");
 $client->setOpt(YAR_OPT_PACKAGER, $packager);
 
-// 场景1测试：通过 OpenResty 反向桥接调用 Go gRPC 后端
 $result_add = $client->add(15, 27);
 echo "add(15, 27) = " . $result_add . "\n";
 assert($result_add === 42, "Expected 42, got {$result_add}");
@@ -27,5 +27,13 @@ assert($result_add === 42, "Expected 42, got {$result_add}");
 $result_sub = $client->subtract(100, 37);
 echo "subtract(100, 37) = " . $result_sub . "\n";
 assert($result_sub === 63, "Expected 63, got {$result_sub}");
+
+// ── 无 package：Bare（fullServiceName = "Bare"，无 "."）──
+$bare = new Yar_Client("http://127.0.0.1:{$port}/api/Bare");
+$bare->setOpt(YAR_OPT_PACKAGER, $packager);
+
+$result_combine = $bare->combine(20, 22);
+echo "combine(20, 22) = " . $result_combine . "\n";
+assert($result_combine === 42, "Expected 42, got {$result_combine}");
 
 echo "Scenario 1 (PHP Yar → OpenResty → Go gRPC): PASS\n";

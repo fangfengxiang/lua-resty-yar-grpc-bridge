@@ -79,15 +79,20 @@ ENV GOFLAGS=-mod=mod
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest \
     && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
-# ── Lua 依赖（单条 luarocks install 连带装 lua-yar + lua-protobuf）──
-# lua-yar-grpc 的 rockspec 已声明 dependencies = {lua-yar, lua-protobuf}，
-# luarocks 自动递归安装。lua-yar / lua-protobuf 版本由 rockspec 决定。
-# 装到 OpenResty luajit 标准路径，e2e nginx 的 ;; 默认 LUA_PATH 可查找。
-#
-# 不锁版本号：lua-yar-grpc 是 yar-group 自家库，e2e 的目标是验证最新发布版
-# 能与 bridge 正常互操作，而非复现某个历史版本。发版后无需回来改 Dockerfile。
-# 真需复现某次构建时，用 git commit + Docker image tag 锁定整个镜像更可靠。
-RUN /usr/local/openresty/luajit/bin/luarocks install lua-yar-grpc
+# ── Lua 依赖（分步装：lua-protobuf 先 pin 版本，lua-yar-grpc 再连带触发 lua-yar）──
+# 为何分步 + pin lua-protobuf 0.5.3-1：
+#   luarocks 3.13.0（最新版，截至 2026-10 无更新）fetch.lua 有 bug——
+#   download_with_mirrors 失败分支 `err = err .. name` 在 fs.download 返回
+#   nil 时拼接崩溃（attempt to concatenate local 'name' (a nil value)）。
+#   lua-protobuf 0.5.2-1 的 .src.rock 在某 mirror 下载失败时触发；0.5.3-1 正常。
+#   fresh 构建若 luarocks 选到 0.5.2-1 即崩溃。pin 0.5.3-1 绕过。
+#   升级 luarocks 无解（3.13.0 已最新，bug 仍在）；根治需上游修复 fetch.lua
+#   （失败分支应拼 dl_err 第二返回值，而非 name 第一返回值）。
+# 第二步 luarocks install lua-yar-grpc：其 rockspec 声明 dependencies =
+#   {lua-yar, lua-protobuf}，发现 lua-protobuf 已满足跳过 fetch，
+#   自动触发 lua-yar 0.1.2-2 安装（fetch 正常）。
+RUN /usr/local/openresty/luajit/bin/luarocks install lua-protobuf 0.5.3-1 \
+    && /usr/local/openresty/luajit/bin/luarocks install lua-yar-grpc
 
 # OpenResty 在容器内的标准路径
 ENV OPENRESTY_PREFIX=/usr/local/openresty

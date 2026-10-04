@@ -144,9 +144,10 @@ http {
     server {
         listen 8888;
 
-        # nginx location 用 named capture 把 path 末段提取为 service_name 变量，
-        # 前缀由部署方决定（示例用 /api/）；lua 端读 ngx.var.service_name 不做 path 解析
-        location ~ ^/api/(?<service_name>[^/]+)$ {
+        # nginx location 用 named capture 把 path 提取为 service_name 变量；
+        # [^/]+ 兼容含 package 的 fullServiceName（如 calc.Calculator）
+        # 或直接 include example/yar2grpc_location.conf（见 example/ 目录）
+        location ~ ^/(?<service_name>[^/]+)$ {
             content_by_lua_block {
                 require("resty.yar_grpc_bridge.yar2grpc").handle()
             }
@@ -155,7 +156,7 @@ http {
 }
 ```
 
-YAR 客户端指向 `http://host:8888/api/{Service}`（如 `Calculator`），调用 `$client->method()`——方法名保持纯名，service 由 URL path 选定。
+YAR 客户端指向 `http://host:8888/{Service}`（如 `Calculator`），调用 `$client->method()`——方法名保持纯名，service 由 URL path 选定。
 
 > 完整 API、命名约定与 gRPC 状态码详见 [docs/api.md](docs/api.md)。
 
@@ -316,6 +317,9 @@ lua-resty-yar-grpc-bridge/
 │   ├── yar2grpc.lua
 │   ├── trace.lua
 │   └── host.lua
+├── example/                     # 可直接 include 的 nginx location 片段
+│   ├── grpc2yar_location.conf
+│   └── yar2grpc_location.conf
 ├── t/                            # Test::Nginx 集成测试（*.t）
 ├── t/e2e/                        # 端到端测试 + Dockerfile + run_e2e.sh
 ├── .luacheckrc

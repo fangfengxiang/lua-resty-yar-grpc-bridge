@@ -7,8 +7,8 @@
 --   3. 注入 cosocket（Yar.client.set_socket(ngx.socket)）
 --   4. 配置 YAR 默认选项
 --
--- HTTP 入口 serve() 已拆出到 grpc2yar_entry.lua（overview-5：包门面不混 HTTP I/O）。
---   content_by_lua_block 调 require("resty.yar_grpc_bridge.grpc2yar_entry").serve()
+-- HTTP 入口 serve() 已拆出到 grpc2yar_endpoint.lua（overview-5：包门面不混 HTTP I/O）。
+--   content_by_lua_block 调 require("resty.yar_grpc_bridge.grpc2yar_endpoint").serve()
 --   本模块保留 serve() 委托别名（向后兼容现有 nginx 配置 / 测试）。
 --   配置状态（_services / _svc_cache / _max_payload_bytes）仍由门面持有，
 --   入口层通过 resolve_service_config() / get_max_payload_bytes() 运行时读取。
@@ -19,13 +19,19 @@ local Yar = require("yar")
 local bridge = require("resty.yar_grpc_bridge.grpc2yar")
 local host = require("resty.yar_grpc_bridge.host")
 -- 核心协议转换库 lua-yar-grpc（纯函数，运行时无关；门面 setup 仅用 core.clear_cache）
--- 协议编解码 / 错误码 / deadline / trace 由 grpc2yar_entry 在入口层按需 require。
+-- 协议编解码 / 错误码 / deadline / trace 由 grpc2yar_endpoint 在入口层按需 require。
 local core = require("yar_grpc")
 
 ---@class yar_grpc_bridge
 ---@field VERSION string
 local _M = {}
 _M.VERSION = "0.1.0"
+
+--- gRPC path 匹配正则（与 lua-yar-grpc grpc_converter.parse_grpc_path 同步）
+-- single source of truth：供文档引用 + 测试断言同步。
+-- 注意：nginx location 不能直接引用 Lua 常量（nginx 配置静态编译，不支持 Lua 插值），
+--       部署方用 example/ 下的 include 片段（见 example/*.conf）。
+_M.GRPC_PATH_PATTERN = "^/+([^/]+)/([^/]+)$"
 
 -- 模块级状态
 -- Module-level state
@@ -96,8 +102,8 @@ local function load_pb_file(file)
     return true
 end
 
--- HTTP 响应函数 send_error / send_ok 已移至 grpc2yar_entry.lua（Category 2 HTTP I/O）。
--- HTTP response functions moved to grpc2yar_entry.lua (Category 2 HTTP framework I/O).
+-- HTTP 响应函数 send_error / send_ok 已移至 grpc2yar_endpoint.lua（Category 2 HTTP I/O）。
+-- HTTP response functions moved to grpc2yar_endpoint.lua (Category 2 HTTP framework I/O).
 
 --- 初始化：加载 .pb 文件、配置 services、注入 cosocket
 -- 在 init_by_lua_block 中调用一次
@@ -225,7 +231,7 @@ function _M.setup(opts)
 end
 
 --- 解析服务配置为最终 YAR 调用参数（合并全局默认 + per-service 覆盖）
--- 由 grpc2yar_entry.serve() 通过门面访问器调用（配置状态由本门面持有）
+-- 由 grpc2yar_endpoint.serve() 通过门面访问器调用（配置状态由本门面持有）
 ---@param service_name string 服务名（用作缓存 key）
 ---@return string|nil url YAR Server URL
 ---@return table|nil opts 合并后的 YAR 选项
@@ -251,21 +257,21 @@ local function resolve_service_config(service_name)
     _svc_cache[service_name] = { url = svc.url, options = opts }
     return svc.url, opts
 end
--- 暴露给 grpc2yar_entry.serve()（配置状态由门面持有，入口层只读访问）
+-- 暴露给 grpc2yar_endpoint.serve()（配置状态由门面持有，入口层只读访问）
 _M.resolve_service_config = resolve_service_config
 
---- 读取请求体大小上限（供 grpc2yar_entry.serve() DoS 预检使用）
+--- 读取请求体大小上限（供 grpc2yar_endpoint.serve() DoS 预检使用）
 ---@return number max_payload_bytes
 function _M.get_max_payload_bytes()
     return _max_payload_bytes
 end
 
 --- 处理单个 gRPC 请求（委托别名，向后兼容）
--- 实现已移至 grpc2yar_entry.lua（overview-5：HTTP I/O 不混包门面）。
--- 惰性 require 避免与 grpc2yar_entry 的加载循环（grpc2yar_entry 运行时 require 本门面）。
+-- 实现已移至 grpc2yar_endpoint.lua（overview-5：HTTP I/O 不混包门面）。
+-- 惰性 require 避免与 grpc2yar_endpoint 的加载循环（grpc2yar_endpoint 运行时 require 本门面）。
 ---@return nil
 function _M.serve()
-    return require("resty.yar_grpc_bridge.grpc2yar_entry").serve()
+    return require("resty.yar_grpc_bridge.grpc2yar_endpoint").serve()
 end
 
 --- 异步日志阶段（在 log_by_lua_block 中调用）

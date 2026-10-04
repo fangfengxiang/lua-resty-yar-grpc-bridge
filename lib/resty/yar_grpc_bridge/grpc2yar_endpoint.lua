@@ -1,4 +1,4 @@
--- lib/resty/yar_grpc_bridge/grpc2yar_entry.lua
+-- lib/resty/yar_grpc_bridge/grpc2yar_endpoint.lua
 -- gRPC → YAR 方向 OpenResty HTTP 入口（Category 2：HTTP 框架绑定 I/O）
 --
 -- 从 init.lua 拆出（overview-5 职责拆分）：serve() 读 body / 解析 path / 输出 gRPC 响应，
@@ -20,10 +20,10 @@ local trace = require("resty.yar_grpc_bridge.trace")
 local bridge = require("resty.yar_grpc_bridge.grpc2yar")
 -- 门面 init.lua 持有 setup() 填充的配置状态（resolve_service_config / max_payload_bytes）。
 -- init.lua 的 serve() 用惰性委托 require 本模块，不在模块加载期触发反向 require，故无加载循环；
--- 此处模块级 require 安全（grpc2yar_entry 若被直接 require，init.lua 会先完整加载再返回）。
+-- 此处模块级 require 安全（grpc2yar_endpoint 若被直接 require，init.lua 会先完整加载再返回）。
 local facade = require("resty.yar_grpc_bridge")
 
----@class yar_grpc_bridge.grpc2yar_entry
+---@class yar_grpc_bridge.grpc2yar_endpoint
 local _M = {}
 
 --- 发送 gRPC 错误响应

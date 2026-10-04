@@ -28,6 +28,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	calcpb "calc/proto"
+	barepb "calc/proto/bare"
 )
 
 // methodHandler decodes a protobuf payload, calls the gRPC method, and returns
@@ -35,14 +36,14 @@ import (
 type methodHandler func(ctx context.Context, payload []byte) ([]byte, error)
 
 // buildHandlers creates a dispatch table mapping "Service/Method" to handlers.
-func buildHandlers(srv *calculatorServer) map[string]methodHandler {
+func buildHandlers(calcSrv *calculatorServer, bareSrv *bareServer) map[string]methodHandler {
 	return map[string]methodHandler{
 		"calculator.Calculator/Add": func(ctx context.Context, payload []byte) ([]byte, error) {
 			var req calcpb.Calculator_AddRequest
 			if err := proto.Unmarshal(payload, &req); err != nil {
 				return nil, status.Errorf(codes.InvalidArgument, "unmarshal AddRequest: %v", err)
 			}
-			resp, err := srv.Add(ctx, &req)
+			resp, err := calcSrv.Add(ctx, &req)
 			if err != nil {
 				return nil, err
 			}
@@ -53,7 +54,18 @@ func buildHandlers(srv *calculatorServer) map[string]methodHandler {
 			if err := proto.Unmarshal(payload, &req); err != nil {
 				return nil, status.Errorf(codes.InvalidArgument, "unmarshal SubtractRequest: %v", err)
 			}
-			resp, err := srv.Subtract(ctx, &req)
+			resp, err := calcSrv.Subtract(ctx, &req)
+			if err != nil {
+				return nil, err
+			}
+			return proto.Marshal(resp)
+		},
+		"Bare/Combine": func(ctx context.Context, payload []byte) ([]byte, error) {
+			var req barepb.Bare_CombineRequest
+			if err := proto.Unmarshal(payload, &req); err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "unmarshal Bare_CombineRequest: %v", err)
+			}
+			resp, err := bareSrv.Combine(ctx, &req)
 			if err != nil {
 				return nil, err
 			}
@@ -63,8 +75,8 @@ func buildHandlers(srv *calculatorServer) map[string]methodHandler {
 }
 
 // startHTTPBridge starts the HTTP-to-gRPC bridge server.
-func startHTTPBridge(addr string, srv *calculatorServer) {
-	handlers := buildHandlers(srv)
+func startHTTPBridge(addr string, calcSrv *calculatorServer, bareSrv *bareServer) {
+	handlers := buildHandlers(calcSrv, bareSrv)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

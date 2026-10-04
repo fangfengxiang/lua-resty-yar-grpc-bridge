@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+// 无 package —— 验证 fullServiceName 无 package 模式入参
+//
+// 全限定 service = Bare（无 package 前缀，gRPC path = /Bare/Combine）
+// message 全限定 = Bare_CombineRequest（无 package 前缀）
+// get_type_names("Bare", "Combine") → "Bare_CombineRequest"
+//   service="Bare"（无 "."）拼接结果 = pb 全名（恒等关系，见 lua-yar-grpc 文档）
+// 与 calculator.proto（有 package）对照，覆盖 fullServiceName 有/无 package 两种模式
+
+option go_package = "calc/proto/bare;barepb";
+
+service Bare {
+  rpc Combine(Bare_CombineRequest) returns (Bare_CombineResponse);
+}
+
+message Bare_CombineRequest {
+  int32 a = 1;
+  int32 b = 2;
+}
+
+message Bare_CombineResponse {
+  int32 result = 1;
+}

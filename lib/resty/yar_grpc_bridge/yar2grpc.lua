@@ -7,8 +7,8 @@
 -- 已委托核心 lua-yar-grpc 的 forward.encode_request / forward.decode_response。
 -- 本层只保留：grpc_transport 注入 + 调用编排（_dispatch）+ proxy service 注册。
 --
--- HTTP 入口 handle() 已拆出到 yar2grpc_entry.lua（overview-5：编排不混 HTTP I/O）。
---   content_by_lua_block 调 require("resty.yar_grpc_bridge.yar2grpc_entry").handle()
+-- HTTP 入口 handle() 已拆出到 yar2grpc_endpoint.lua（overview-5：编排不混 HTTP I/O）。
+--   content_by_lua_block 调 require("resty.yar_grpc_bridge.yar2grpc_endpoint").handle()
 --   本模块保留 handle() 委托别名（向后兼容现有 nginx 配置 / 测试）。
 --
 -- 设计思路：
@@ -56,14 +56,14 @@ function _M.set_grpc_transport(fn)
 end
 
 --- 查询 gRPC 传输层是否已注入
--- 供 yar2grpc_entry.handle() 前置校验（未注入则 fast-fail，不读 body）
+-- 供 yar2grpc_endpoint.handle() 前置校验（未注入则 fast-fail，不读 body）
 ---@return boolean
 function _M.has_transport()
     return _grpc_transport ~= nil
 end
 
 --- 取已注册的 proxy service 子表
--- 供 yar2grpc_entry.handle() 按 service 名选 proxy（配置状态由本编排层持有）
+-- 供 yar2grpc_endpoint.handle() 按 service 名选 proxy（配置状态由本编排层持有）
 ---@param service_name string
 ---@return table|nil proxy {yar_method → 闭包}
 function _M.get_proxy(service_name)
@@ -146,12 +146,12 @@ function _M._dispatch(service, method, params)
 end
 
 --- 处理 YAR 请求（委托别名，向后兼容）
--- 实现已移至 yar2grpc_entry.lua（overview-5：HTTP I/O 不混编排层）。
--- 惰性 require 避免与 yar2grpc_entry 的加载循环（yar2grpc_entry 运行时 require 本编排层）。
+-- 实现已移至 yar2grpc_endpoint.lua（overview-5：HTTP I/O 不混编排层）。
+-- 惰性 require 避免与 yar2grpc_endpoint 的加载循环（yar2grpc_endpoint 运行时 require 本编排层）。
 ---@return string|nil yar_response
 ---@return string|nil err
 function _M.handle()
-    return require("resty.yar_grpc_bridge.yar2grpc_entry").handle()
+    return require("resty.yar_grpc_bridge.yar2grpc_endpoint").handle()
 end
 
 return _M

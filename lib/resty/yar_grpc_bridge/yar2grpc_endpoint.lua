@@ -1,4 +1,4 @@
--- lib/resty/yar_grpc_bridge/yar2grpc_entry.lua
+-- lib/resty/yar_grpc_bridge/yar2grpc_endpoint.lua
 -- YAR → gRPC 方向 OpenResty HTTP 入口（Category 2：HTTP 框架绑定 I/O）
 --
 -- 从 yar2grpc.lua 拆出（overview-5 职责拆分）：handle() 读 ngx.var.service_name /
@@ -13,7 +13,7 @@ local ngx = ngx
 local Yar = require("yar")
 local yar2grpc = require("resty.yar_grpc_bridge.yar2grpc")
 
----@class yar_grpc_bridge.yar2grpc_entry
+---@class yar_grpc_bridge.yar2grpc_endpoint
 local _M = {}
 
 --- 处理 YAR 请求（在 content_by_lua_block 中调用）
@@ -46,7 +46,7 @@ function _M.handle()
         return
     end
 
-    -- 确保 body 已读取（含 disk spill 处理，对标 grpc2yar_entry serve() 的 body file 回退）
+    -- 确保 body 已读取（含 disk spill 处理，对标 grpc2yar_endpoint serve() 的 body file 回退）
     -- 当请求体超过 client_body_buffer_size 时 get_body_data() 返回 nil，数据写入临时文件
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
