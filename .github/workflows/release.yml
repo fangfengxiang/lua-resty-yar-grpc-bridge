@@ -100,7 +100,7 @@ jobs:
           echo "rockspec=${ROCKSPEC}" >> $GITHUB_OUTPUT
 
       - name: Upload rockspec artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rockspec
           path: lua-resty-yar-grpc-bridge-*.rockspec
