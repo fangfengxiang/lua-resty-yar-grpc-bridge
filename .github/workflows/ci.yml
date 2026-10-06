@@ -43,7 +43,7 @@ jobs:
       - name: Install luacheck
         run: luarocks install luacheck
       - name: Run stylua --check
-        uses: JohnnyMorganz/stylua-action@v4
+        uses: JohnnyMorganz/stylua-action@v5
         with:
           version: latest
           # v4 要求 token：action 通过 GitHub API 下载 release，匿名访问触发限流。
